@@ -39,3 +39,4 @@ processors = {
     "cdr": CDRProcessor,
     'ncbi': NCBIProcessor
 }
+

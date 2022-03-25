@@ -108,27 +108,27 @@ if __name__ == '__main__':
     args = parser.parse_args()
     print("cur path：" + str(os.getcwd()))
 
-    if not os.path.exists(args.output_dir): # '/Users/wangyang/Desktop/wy/project/python/deeplearning/nernen/outputs/'
+    if not os.path.exists(args.output_dir): # './outputs'
         os.mkdir(args.output_dir)
-    args.output_dir = args.output_dir + '{}'.format(args.dataset) # '/Users/wangyang/Desktop/wy/project/python/deeplearning/nernen/outputs/cdr'
+    args.output_dir = args.output_dir + '/{}'.format(args.dataset) # './outputs/cdr'
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
-    args.output_dir = args.output_dir + '/{}'.format(args.task_name) # '/Users/wangyang/Desktop/wy/project/python/deeplearning/nernen/outputs/cdr/ner'
+    args.output_dir = args.output_dir + '/{}'.format(args.task_name) # './outputs/cdr/ner'
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
-    args.output_dir = args.output_dir + '/{}'.format(args.model_type) # '/Users/wangyang/Desktop/wy/project/python/deeplearning/nernen/outputs/cdr/ner/bert'
+    args.output_dir = args.output_dir + '/{}'.format(args.model_type) # './outputs/cdr/ner/bert'
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
-    time_ = time.strftime("%Y-%m-%d-%H:%M:%S", time.localtime())
+    time_ = time.strftime("%Y-%m-%d-%H：%M：%S", time.localtime())
     init_logger(log_file=args.output_dir + f'/{args.model_type}-{args.dataset}-{args.task_name}-{time_}.log')
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
         raise ValueError(
             "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
 
     # Setup CUDA, GPU
-    device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu") # cpu
     args.n_gpu = torch.cuda.device_count() # 0
-    args.device = device
+    args.device = device # cpu
     logger.warning("device: %s, n_gpu: %s", device, args.n_gpu)
     # Set seed
     seed_everything(args.seed)
@@ -137,16 +137,19 @@ if __name__ == '__main__':
     args.dataset = args.dataset.lower() # 'cdr'
     if args.dataset not in processors: # from processors.ner_seq import ner_processors as processors
         raise ValueError("Task not found: %s" % args.dataset)
-    processor_class = processors[args.dataset] # <class 'data_process.Processor'>
+    processor_class = processors[args.dataset] # <class 'data_process.CDRProcessor'>
     config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
     # config_class: BertConfig
     # model_class: BertSoftmaxForNer 或 BertSoftmaxForNen
     # tokenizer_class: BertTokenizer
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path, do_lower_case=args.do_lower_case)
-    DICT_DATASET = DATASET[args.dataset]["to"]
-    data_processor = processor_class(tokenizer, DICT_DATASET)
-    # NER任务
-    label_list = data_processor.get_ner_labels() #['X', 'B-Chemical', 'O', 'B-Disease', 'I-Chemical', 'I-Disease']
+    DICT_DATASET = DATASET[args.dataset]["to"] # {'train': 'CDR/train.txt', 'dev': 'CDR/dev.txt', 'test': 'CDR/test.txt', 'zs_test': 'CDR/zs_test.txt'}
+    data_processor = processor_class(tokenizer, DICT_DATASET, args.train_max_seq_length)
+    # TODO
+    if args.task_name == 'ner': # NER任务
+        label_list = data_processor.get_ner_labels() # ['X', 'B-Chemical', 'O', 'B-Disease', 'I-Chemical', 'I-Disease']
+    else: # NEN任务
+        label_list = data_processor.get_nen_labels()
     args.id2label = {i: label for i, label in enumerate(label_list)} # {0: 'X', 1: 'B-Chemical', 2: 'O', 3: 'B-Disease', 4: 'I-Chemical', 5: 'I-Disease'}
     args.label2id = {label: i for i, label in enumerate(label_list)} # {'X': 0, 'B-Chemical': 1, 'O': 2, 'B-Disease': 3, 'I-Chemical': 4, 'I-Disease': 5}
     num_labels = len(label_list) # 6

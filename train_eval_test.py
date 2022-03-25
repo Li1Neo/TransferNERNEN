@@ -194,7 +194,7 @@ def evaluate(args, model, tokenizer, prefix=""):
 		os.mkdir(cached_eval_dataset_root)
 	DICT_DATASET = DATASET[args.dataset]["to"]
 	processor_class = processors[args.dataset]  # <class 'data_process.Processor'>
-	data_processor = processor_class(tokenizer, DICT_DATASET)
+	data_processor = processor_class(tokenizer, DICT_DATASET, args.eval_max_seq_length)
 	eval_dataset = load_and_cache_examples(data_processor, cached_eval_dataset_root, data_type='eval')
 
 	args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)

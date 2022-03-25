@@ -12,11 +12,12 @@ import torch
 from typing import List, Dict
 import copy
 import pickle
+
 BASEPATH = "./datasets/"
 class CDRProcessor(object):
-    def __init__(self, tokenizer, dict_dataset: Dict):
+    def __init__(self, tokenizer, dict_dataset: Dict, max_len):
         self.tokenizer = tokenizer
-        self.__dict_dataset = dict_dataset
+        self.__dict_dataset = dict_dataset # {'train': 'CDR/train.txt', 'dev': 'CDR/dev.txt', 'test': 'CDR/test.txt', 'zs_test': 'CDR/zs_test.txt'}
         # self.__entity_base = EntityBase(bert_path)
         # self.__dict_ner_label = ['X']
         self.__dict_ner_label = ['X', 'B-Chemical', 'O', 'B-Disease', 'I-Chemical', 'I-Disease']
@@ -25,11 +26,12 @@ class CDRProcessor(object):
         # output = open('./data/dataset_cache/cdr/nen_labels.pkl', 'wb')
         # pickle.dump(self.__dict_nen_label, output, -1)
         # output.close()
-        nen_label_pkl_file = open('./data/dataset_cache/cdr/nen_labels.pkl', 'rb')
+        task_name = self.__dict_dataset['train'][:-10].lower() # 'cdr'
+        nen_label_pkl_file = open('./data/dataset_cache/' + task_name + '/nen_labels.pkl', 'rb')
         self.__dict_nen_label = pickle.load(nen_label_pkl_file)
         nen_label_pkl_file.close()
         # 对训练集__parse_data后self.__dict_nen_label: ['X', 'D009270', 'O', 'D003000', 'D006973', '-1', 'D007022', ..., , 'D003513', 'D018491', 'D006719']
-        self.__max_seq_len = 128
+        self.__max_seq_len = max_len
 
     def get_train_sample(self):
         return self.__parse_data(f"{BASEPATH}{self.__dict_dataset['train']}")
