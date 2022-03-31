@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
     # Other parameters
     parser.add_argument('--markup', default='bio', type=str,
-                        choices=['bios', 'bio'])
+                        choices=['bios', 'bio', 'bo'])
     parser.add_argument('--loss_type', default='ce', type=str,
                         choices=['lsr', 'focal', 'ce'])
     parser.add_argument("--config_name", default="", type=str,
