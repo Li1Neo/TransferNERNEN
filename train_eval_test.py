@@ -145,7 +145,11 @@ def train(args, train_dataset, model, tokenizer):
 			batch[3] = batch[3].to(args.device)
 			batch = tuple(t for t in batch)
 			inputs, ner, nen, lens = batch
-			outputs = model(labels=ner, **inputs)
+			if args.task_name == 'ner':
+				labels = ner
+			elif args.task_name == 'nen':
+				labels = nen
+			outputs = model(labels=labels, **inputs)
 			# (
 			# 	tensor(1.9131, device='cuda:0', grad_fn= < NllLossBackward0 >),
 			# 	一个大小为torch.Size([24, 58, num_labels])的tensor
@@ -233,7 +237,11 @@ def evaluate(args, model, tokenizer, prefix=""):
 
 		with torch.no_grad():
 			inputs, ner, nen, lens = batch
-			outputs = model(labels=ner, **inputs)
+			if args.task_name == 'ner':
+				labels = ner
+			elif args.task_name == 'nen':
+				labels = nen
+			outputs = model(labels=labels, **inputs)
 		tmp_eval_loss, logits = outputs[:2]
 		eval_loss += tmp_eval_loss.item() # 0.0876813605427742
 		nb_eval_steps += 1
@@ -243,7 +251,7 @@ def evaluate(args, model, tokenizer, prefix=""):
 		#  [2, 2, 2, 2, 2, ..., 2, 2, 3],
 		#  ...,
 		#  [2, 2, 2, 1, 4, ..., 2, 2, 2]]
-		out_label_ids = ner.cpu().numpy().tolist() # TODO
+		out_label_ids = labels.cpu().numpy().tolist() # TODO
 		# 真实的token标签，大小为(16, 55)的列表
 		# [[2, 3, 5, 5, 5, ..., 0, 0, 0],
 		#  [2, 2, 2, 2, 2, ..., 0, 0, 0],

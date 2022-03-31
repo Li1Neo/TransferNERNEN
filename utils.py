@@ -184,7 +184,7 @@ def get_entity_bios(seq, id2label):
             chunk = [-1, -1, -1]
     return chunks
 
-def get_entity_bio(seq,id2label):
+def get_entity_bio(seq, id2label):
     """Gets entities from sequence.
     note: BIO
     Args:
@@ -230,6 +230,105 @@ def get_entity_bio(seq,id2label):
             chunk = [-1, -1, -1]
     return chunks
 
+
+    """Gets entities from sequence.
+   
+    """
+    # 如seq：['B-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'O', 'B-Chemical', 'I-Chemical', 'I-Chemical', 'I-Chemical', 'B-Disease', 'O', 'O', 'O', 'O', 'O']
+    chunks = []
+    # chunks:
+    # [] ->
+    # [['Disease', 0, 8]] ->
+    # ... ->
+    # [['Disease', 0, 8], ['Chemical', 10, 13], ['Disease', 14, 14]]
+    chunk = [-1, -1, -1]
+    for indx, tag in enumerate(seq):
+        if not isinstance(tag, str):
+            tag = id2label[tag]
+        if tag.startswith("B-"):
+            if chunk[2] != -1:
+                chunks.append(chunk)
+            chunk = [-1, -1, -1]
+            chunk[1] = indx
+            chunk[0] = tag.split('-')[1]
+            chunk[2] = indx
+            if indx == len(seq) - 1:
+                chunks.append(chunk)
+        elif tag.startswith('I-') and chunk[1] != -1:
+            _type = tag.split('-')[1]
+            if _type == chunk[0]:
+                chunk[2] = indx
+
+            if indx == len(seq) - 1:
+                chunks.append(chunk)
+        else:
+            if chunk[2] != -1:
+                chunks.append(chunk)
+            chunk = [-1, -1, -1]
+    return chunks
+
+
+import copy
+def get_entity_bo(nen_tag, id2label):
+    """
+    parse the nen tag sequence to the dictionary 将nen标签序列解析为字典
+    Args:
+        nen_tag (list): sequence of labels.
+    Returns:
+        list: list of (chunk_type, chunk_start, chunk_end).
+    Example:
+        # nen_tag:['D009270', 'O', 'O', 'O', 'O', 'O', 'D003000', 'O']
+        # ->
+        # result:{'D009270': [(0, 1)], 'D003000': [(6, 1)]}
+
+        nen_tag:['D009270', 'D009270', 'D009080', 'O', 'O', 'D009080', 'D009080', 'O', 'O', 'D003000', 'O', 'D003000', 'D003000']
+        get_entity_bo(nen_tag)
+        #output
+        [['D009270', 0, 1], ['D009080', 2, 2], ['D009080', 5, 6], ['D003000', 9, 9], ['D003000', 11, 12]]
+    """
+    tmp = []
+    result = {}
+    if not isinstance(nen_tag[0], str):
+        nen_tag = [id2label[tag] for tag in nen_tag]
+    for i in range(len(nen_tag)):
+        if nen_tag[i] != "O":
+            if i == 0: tmp.append(i)
+            else:
+                if nen_tag[i-1] == "O": tmp.append(i)
+                else:
+                    if nen_tag[i] == nen_tag[i-1]: tmp.append(i)
+                    else:
+                        if len(tmp):
+                            cache = result.get(nen_tag[i-1], [])
+                            cache.append((tmp[0], len(tmp)))
+                            result[nen_tag[i - 1]] = cache
+                            tmp.clear()
+                            tmp.append(i)
+        else:
+            if len(tmp):
+                cache = result.get(nen_tag[i-1], [])
+                cache.append((tmp[0], len(tmp)))
+                result[nen_tag[i - 1]] = cache
+                tmp.clear()
+    if len(tmp):
+        i = len(nen_tag)
+        cache = result.get(nen_tag[i-1], [])
+        cache.append((tmp[0], len(tmp)))
+        result[nen_tag[i - 1]] = cache
+        tmp.clear()
+    # result: {'D009270': [(0, 2)], 'D009080': [(2, 1), (5, 2)], 'D003000': [(9, 1), (11, 2)]}
+    chunks = []
+    chunk = [-1, -1, -1]
+    for key, value in result.items():
+        # 如key：'D009080'
+        # value：[(2, 1), (5, 2)]
+        for idx in value:
+            chunk[0] = key
+            chunk[1] = idx[0]
+            chunk[2] = idx[0] + idx[1] - 1
+            chunks.append(copy.deepcopy(chunk))
+    return chunks
+
 def get_entities(seq, id2label, markup='bios'):
     '''
     :param seq:
@@ -240,5 +339,7 @@ def get_entities(seq, id2label, markup='bios'):
     assert markup in ['bio', 'bios']
     if markup == 'bio':
         return get_entity_bio(seq, id2label)
-    else:
+    elif markup == 'bo':
+        return get_entity_bo(seq, id2label)
+    elif markup == 'bios':
         return get_entity_bios(seq, id2label)

@@ -109,10 +109,10 @@ if __name__ == '__main__':
     args.output_dir = args.output_dir + '/{}'.format(args.dataset) # './outputs/cdr'
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
-    args.output_dir = args.output_dir + '/{}'.format(args.task_name) # './outputs/cdr/ner'
+    args.output_dir = args.output_dir + '/{}'.format(args.task_name) # './outputs/cdr/nen'
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
-    args.output_dir = args.output_dir + '/{}'.format(args.model_type) # './outputs/cdr/ner/bert'
+    args.output_dir = args.output_dir + '/{}'.format(args.model_type) # './outputs/cdr/nen/bert'
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
     time_ = time.strftime("%Y-%m-%d-%H：%M：%S", time.localtime())
@@ -146,9 +146,9 @@ if __name__ == '__main__':
         label_list = data_processor.get_ner_labels() # ['X', 'B-Chemical', 'O', 'B-Disease', 'I-Chemical', 'I-Disease']
     elif args.task_name == 'nen': # NEN任务
         label_list = data_processor.get_nen_labels()
-    args.id2label = {i: label for i, label in enumerate(label_list)} # {0: 'X', 1: 'B-Chemical', 2: 'O', 3: 'B-Disease', 4: 'I-Chemical', 5: 'I-Disease'}
-    args.label2id = {label: i for i, label in enumerate(label_list)} # {'X': 0, 'B-Chemical': 1, 'O': 2, 'B-Disease': 3, 'I-Chemical': 4, 'I-Disease': 5}
-    num_labels = len(label_list) # 6
+    args.id2label = {i: label for i, label in enumerate(label_list)} # {0: 'X', 1: 'D009270', 2: 'O', 3: 'D003000', ..., 1859: 'D014869', 1860: 'D000031', 1861: 'D001247'}
+    args.label2id = {label: i for i, label in enumerate(label_list)} # {'X': 0, 'D009270': 1, 'O': 2, 'D003000': 3, ..., 'D014869': 1859, 'D000031': 1860, 'D001247': 1861}
+    num_labels = len(label_list) # 1862
     args.model_type = args.model_type.lower() # 'bert'
     config = config_class.from_pretrained(args.model_name_or_path, num_labels=num_labels)
     config.loss_type = args.loss_type # 'ce'
