@@ -298,7 +298,7 @@ def get_entities(seq, id2label, markup='bios'):
     :param markup:
     :return:
     '''
-    assert markup in ['bio', 'bios']
+    assert markup in ['bio', 'bios', 'bo']
     if markup == 'bio':
         return get_entity_bio(seq, id2label)
     elif markup == 'bo':
