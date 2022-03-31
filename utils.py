@@ -230,44 +230,6 @@ def get_entity_bio(seq, id2label):
             chunk = [-1, -1, -1]
     return chunks
 
-
-    """Gets entities from sequence.
-   
-    """
-    # 如seq：['B-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'O', 'B-Chemical', 'I-Chemical', 'I-Chemical', 'I-Chemical', 'B-Disease', 'O', 'O', 'O', 'O', 'O']
-    chunks = []
-    # chunks:
-    # [] ->
-    # [['Disease', 0, 8]] ->
-    # ... ->
-    # [['Disease', 0, 8], ['Chemical', 10, 13], ['Disease', 14, 14]]
-    chunk = [-1, -1, -1]
-    for indx, tag in enumerate(seq):
-        if not isinstance(tag, str):
-            tag = id2label[tag]
-        if tag.startswith("B-"):
-            if chunk[2] != -1:
-                chunks.append(chunk)
-            chunk = [-1, -1, -1]
-            chunk[1] = indx
-            chunk[0] = tag.split('-')[1]
-            chunk[2] = indx
-            if indx == len(seq) - 1:
-                chunks.append(chunk)
-        elif tag.startswith('I-') and chunk[1] != -1:
-            _type = tag.split('-')[1]
-            if _type == chunk[0]:
-                chunk[2] = indx
-
-            if indx == len(seq) - 1:
-                chunks.append(chunk)
-        else:
-            if chunk[2] != -1:
-                chunks.append(chunk)
-            chunk = [-1, -1, -1]
-    return chunks
-
-
 import copy
 def get_entity_bo(nen_tag, id2label):
     """
