@@ -12,44 +12,47 @@ import numpy as np
 from CONSTANT import DATASET, processors
 
 def train(args, train_dataset, model, tokenizer):
-	evaluate(args, model, tokenizer)
 	""" Train the model """
-	args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
+	args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu) # 以args.per_gpu_train_batch_size=24为例  args.train_batch_size = 24 * 1 = 24
 	# train_sampler = RandomSampler(train_dataset)
 	# train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size, collate_fn=collate_fn)
 	train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True)
-	if args.max_steps > 0:
+	# cdr数据集len(train_dataset): 5819
+	# 以batch_size = 24为例，len(train_dataloader)= 5819/24 ≈ 243
+	if args.max_steps > 0: # args.max_steps: -1
 		t_total = args.max_steps
 		args.num_train_epochs = args.max_steps // (len(train_dataloader) // args.gradient_accumulation_steps) + 1
 	else:
-		t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
+		t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs # 243/1*3 = 729
 
 	# Prepare optimizer and schedule (linear warmup and decay)
 	no_decay = ["bias", "LayerNorm.weight"]
 	optimizer_grouped_parameters = [
-		{"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-		 "weight_decay": args.weight_decay, },
-		{"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
+		{
+			"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+			"weight_decay": args.weight_decay
+		},
+		{
+			"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+			"weight_decay": 0.0
+		}
 	]
-	args.warmup_steps = int(t_total * args.warmup_proportion)
+	args.warmup_steps = int(t_total * args.warmup_proportion) # 729 * 0.1 = 72
 	optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-	scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps,
-												num_training_steps=t_total)
+	scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
 	# Check if saved optimizer or scheduler states exist
 	if os.path.isfile(os.path.join(args.model_name_or_path, "optimizer.pt")) and os.path.isfile(
 			os.path.join(args.model_name_or_path, "scheduler.pt")):
 		# Load in optimizer and scheduler states
-		optimizer.load_state_dict(torch.load(os.path.join(args.model_name_or_path, "optimizer.pt")))
-		scheduler.load_state_dict(torch.load(os.path.join(args.model_name_or_path, "scheduler.pt")))
+		optimizer.load_state_dict(torch.load(os.path.join(args.model_name_or_path, "optimizer.pt"))) # './data/model_data/biobert-base-cased-v1.1\\optimizer.pt'
+		scheduler.load_state_dict(torch.load(os.path.join(args.model_name_or_path, "scheduler.pt"))) # './data/model_data/biobert-base-cased-v1.1\\scheduler.pt'
 	# Train!
 	logger.info("***** Running training *****")
 	logger.info("  Num examples = %d", len(train_dataset))
 	logger.info("  Num Epochs = %d", args.num_train_epochs)
 	logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
 	logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d",
-				args.train_batch_size
-				* args.gradient_accumulation_steps
-				* 1,
+				args.train_batch_size * args.gradient_accumulation_steps * 1 # 24
 				)
 	logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
 	logger.info("  Total optimization steps = %d", t_total)
@@ -71,8 +74,8 @@ def train(args, train_dataset, model, tokenizer):
 	seed_everything(args.seed)  # Added here for reproductibility (even between python 2 and 3)
 	pbar = ProgressBar(n_total=len(train_dataloader), desc='Training', num_epochs=int(args.num_train_epochs))
 	if args.save_steps == -1 and args.logging_steps == -1:
-		args.logging_steps = len(train_dataloader)
-		args.save_steps = len(train_dataloader)
+		args.logging_steps = len(train_dataloader) # 243
+		args.save_steps = len(train_dataloader) # 243
 	for epoch in range(int(args.num_train_epochs)):
 		pbar.reset()
 		pbar.epoch_start(current_epoch=epoch)
@@ -143,6 +146,10 @@ def train(args, train_dataset, model, tokenizer):
 			batch = tuple(t for t in batch)
 			inputs, ner, nen, lens = batch
 			outputs = model(labels=ner, **inputs)
+			# (
+			# 	tensor(1.9131, device='cuda:0', grad_fn= < NllLossBackward0 >),
+			# 	一个大小为torch.Size([24, 58, num_labels])的tensor
+			# )
 			loss = outputs[0]  # model outputs are always tuple in pytorch-transformers (see doc)
 			if args.gradient_accumulation_steps > 1: # 跳过
 				loss = loss / args.gradient_accumulation_steps
@@ -155,25 +162,29 @@ def train(args, train_dataset, model, tokenizer):
 				scheduler.step()  # Update learning rate schedule
 				model.zero_grad()
 				global_step += 1
-				if args.logging_steps > 0 and global_step % args.logging_steps == 0:
+				if args.logging_steps > 0 and global_step % args.logging_steps == 0: # 每args.logging_steps个steps评估一下
 					# Log metrics
 					print(" ")
 					# Only evaluate when single GPU otherwise metrics may not average well
 					evaluate(args, model, tokenizer)
 
-				if args.save_steps > 0 and global_step % args.save_steps == 0:
+				if args.save_steps > 0 and global_step % args.save_steps == 0: # 每args.save_steps个steps保存一下checkpoint
 					# Save model checkpoint
-					output_dir = os.path.join(args.output_dir, "checkpoint-{}".format(global_step))
+					output_dir = os.path.join(args.output_dir, "checkpoint-{}".format(global_step)) # 如./outputs/cdr/ner/bert/checkpoint-486
 					if not os.path.exists(output_dir):
 						os.makedirs(output_dir)
 					# Take care of distributed/parallel training
-					model_to_save = (model.module if hasattr(model, "module") else model)
+					model_to_save = (model.module if hasattr(model, "module") else model) # hasattr(model, "module"): False
 					model_to_save.save_pretrained(output_dir)
-					torch.save(args, os.path.join(output_dir, "training_args.bin"))
-					tokenizer.save_vocabulary(output_dir)
+					# ./outputs/cdr/ner/bert/checkpoint-486/config.json
+					# ./outputs/cdr/ner/bert/checkpoint-486/pytorch_model.bin
+					torch.save(args, os.path.join(output_dir, "training_args.bin")) # ./outputs/cdr/ner/bert/checkpoint-486/training_args.bin
+					tokenizer.save_vocabulary(output_dir) # ./outputs/cdr/ner/bert/checkpoint-486/vocab.txt
 					logger.info("Saving model checkpoint to %s", output_dir)
 					torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
+					# ./outputs/cdr/ner/bert/checkpoint-486/optimizer.pt
 					torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
+					# ./outputs/cdr/ner/bert/checkpoint-486/scheduler.pt
 					logger.info("Saving optimizer and scheduler states to %s", output_dir)
 		logger.info("\n")
 		if 'cuda' in str(args.device):
@@ -181,8 +192,8 @@ def train(args, train_dataset, model, tokenizer):
 	return global_step, tr_loss / global_step
 
 def evaluate(args, model, tokenizer, prefix=""):
-	metric = SeqEntityScore(args.id2label, markup=args.markup)
-	eval_output_dir = args.output_dir # '/Users/wangyang/Desktop/wy/project/python/deeplearning/nernen/outputs/cdr/ner/bert'
+	metric = SeqEntityScore(args.id2label, markup=args.markup) # <metrics.ner_metrics.SeqEntityScore 对象>
+	eval_output_dir = args.output_dir # './outputs/cdr/ner/bert'
 	if not os.path.exists(eval_output_dir):
 		os.makedirs(eval_output_dir)
 
@@ -192,7 +203,7 @@ def evaluate(args, model, tokenizer, prefix=""):
 	cached_eval_dataset_root = cached_eval_dataset_root + '{}'.format(args.dataset)  # './data/dataset_cache/cdr'
 	if not os.path.exists(cached_eval_dataset_root):
 		os.mkdir(cached_eval_dataset_root)
-	DICT_DATASET = DATASET[args.dataset]["to"]
+	DICT_DATASET = DATASET[args.dataset]["to"] # {'train': 'CDR/train.txt', 'dev': 'CDR/dev.txt', 'test': 'CDR/test.txt', 'zs_test': 'CDR/zs_test.txt'}
 	processor_class = processors[args.dataset]  # <class 'data_process.Processor'>
 	data_processor = processor_class(tokenizer, DICT_DATASET, args.eval_max_seq_length)
 	eval_dataset = load_and_cache_examples(data_processor, cached_eval_dataset_root, data_type='eval')
@@ -224,29 +235,63 @@ def evaluate(args, model, tokenizer, prefix=""):
 			inputs, ner, nen, lens = batch
 			outputs = model(labels=ner, **inputs)
 		tmp_eval_loss, logits = outputs[:2]
-		eval_loss += tmp_eval_loss.item()
+		eval_loss += tmp_eval_loss.item() # 0.0876813605427742
 		nb_eval_steps += 1
 		preds = np.argmax(logits.cpu().numpy(), axis=2).tolist()
+		# 预测的token标签，大小为(16, 55)的列表
+		# [[2, 3, 5, 5, 5, ..., 2, 2, 2],
+		#  [2, 2, 2, 2, 2, ..., 2, 2, 3],
+		#  ...,
+		#  [2, 2, 2, 1, 4, ..., 2, 2, 2]]
 		out_label_ids = ner.cpu().numpy().tolist() # TODO
+		# 真实的token标签，大小为(16, 55)的列表
+		# [[2, 3, 5, 5, 5, ..., 0, 0, 0],
+		#  [2, 2, 2, 2, 2, ..., 0, 0, 0],
+		#  ...,
+		#  [2, 2, 2, 1, 4, ..., 0, 0, 0]]
 		input_lens = lens.cpu().numpy().tolist()
+		# 有效长度，长为16的列表：[22, 35, 46, 17, 26, 28, 25, 39, 12, 23, 27, 23, 33, 31, 55, 39]
 		for i, label in enumerate(out_label_ids):
+			# 如label：[2, 3, 5, 5, 5, ..., 0, 0, 0]  #长55
 			temp_1 = []
 			temp_2 = []
-			for j, m in enumerate(label):
-				if j == 0:
+			for j, m in enumerate(label): # 如j:0, m:2
+				if j == 0: # 跳过第一个标签，CLS标签
 					continue
-				elif j == input_lens[i] - 1:
+				elif j == input_lens[i] - 1: # 遇到最后一个有效标签SEP时，表示遍历完一句话，忽略这个SEP标签，并metric.update，结束循环
 					metric.update(pred_paths=[temp_2], label_paths=[temp_1])
+					# pred_paths：[[3, 5, 5, 5, 5, 5, 5, 5, 5, 2, 1, 4, 4, 4, 3, 2, 2, 2, 2, 2]]
+					# label_paths：[['B-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'O', 'B-Chemical', 'I-Chemical', 'I-Chemical', 'I-Chemical', 'B-Disease', 'O', 'O', 'O', 'O', 'O']]
 					break
-				else:
+				else: # 对每个标签,从id转成标签标识符，并添加到temp_1、temp_2
 					temp_1.append(args.id2label[out_label_ids[i][j]])
+					# out_label_ids[i][j]：3
+					# args.id2label[out_label_ids[i][j]]：'B-Disease'
 					temp_2.append(preds[i][j])
+					# preds[i][j]：3
+			# temp_1:
+			# [] ->
+			# ['B-Disease'] ->
+			# ['B-Disease', 'I-Disease'] ->
+			# ... ->
+			# ['B-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'O', 'B-Chemical', 'I-Chemical', 'I-Chemical', 'I-Chemical', 'B-Disease', 'O', 'O', 'O', 'O', 'O']
+
+			# temp_2:
+			# [] ->
+			# [3] ->
+			# [3, 5] ->
+			# ... ->
+			# [3, 5, 5, 5, 5, 5, 5, 5, 5, 2, 1, 4, 4, 4, 3, 2, 2, 2, 2, 2]
 		pbar(step)
 	logger.info("\n")
-	eval_loss = eval_loss / nb_eval_steps
+	eval_loss = eval_loss / nb_eval_steps # 0.10104974798442846
 	eval_info, entity_info = metric.result()
+	# eval_info: {'acc': 0.8639983013058711, 'recall': 0.8563611491108071, 'f1': 0.8601627734911742} 总体的P、R、f1
+	# entity_info: {'Disease': {'acc': 0.7941, 'recall': 0.7819, 'f1': 0.788}, 'Chemical': {'acc': 0.9183, 'recall': 0.9149, 'f1': 0.9166}} 各个类别的P、R、f1
 	results = {f'{key}': value for key, value in eval_info.items()}
 	results['loss'] = eval_loss
+	# results:
+	# {'acc': 0.8639983013058711, 'recall': 0.8563611491108071, 'f1': 0.8601627734911742, 'loss': 0.10104974798442846}
 	logger.info("***** Eval results %s *****", prefix)
 	info = "-".join([f' {key}: {value:.4f} ' for key, value in results.items()])
 	logger.info(info)
@@ -345,11 +390,11 @@ def predict(args, model, tokenizer, prefix=""):
 # 		torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 # 	# Convert to Tensors and build dataset
 # 	all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
-# 	all_input_mask = torch.tensor([f.input_mask for f in features], dtype=torch.long)
-# 	all_segment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
-# 	all_label_ids = torch.tensor([f.label_ids for f in features], dtype=torch.long)
-# 	all_lens = torch.tensor([f.input_len for f in features], dtype=torch.long)
-# 	dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_lens, all_label_ids)
-# 	return dataset
+# 	all_input_masegment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
+# # 	all_label_ids = torch.tensor([f.label_ids for f in features], dtype=torch.long)
+# # 	all_lens = torch.tensor([f.input_len for f in features], dtype=torch.long)
+# # 	dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_lens, all_label_ids)
+# # 	return datasetk = torch.tensor([f.input_mask for f in features], dtype=torch.long)
+# 	all_s
 
 

@@ -26,8 +26,8 @@ class CDRProcessor(object):
         # output = open('./data/dataset_cache/cdr/nen_labels.pkl', 'wb')
         # pickle.dump(self.__dict_nen_label, output, -1)
         # output.close()
-        task_name = self.__dict_dataset['train'][:-10].lower() # 'cdr'
-        nen_label_pkl_file = open('./data/dataset_cache/' + task_name + '/nen_labels.pkl', 'rb')
+        dataset_name = self.__dict_dataset['train'][:-10].lower() # 'cdr'
+        nen_label_pkl_file = open('./data/dataset_cache/' + dataset_name + '/nen_labels.pkl', 'rb')
         self.__dict_nen_label = pickle.load(nen_label_pkl_file)
         nen_label_pkl_file.close()
         # 对训练集__parse_data后self.__dict_nen_label: ['X', 'D009270', 'O', 'D003000', 'D006973', '-1', 'D007022', ..., , 'D003513', 'D018491', 'D006719']

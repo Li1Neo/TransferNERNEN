@@ -1,9 +1,9 @@
 from data_process import CDRProcessor, NCBIProcessor
-from NERNEN import BertSoftmaxForNer
+from NERNEN import BertSoftmaxForNer, BertSoftmaxForNen
 from transformers import BertConfig, BertTokenizer
 MODEL_CLASSES = {
     # bert ernie bert_wwm bert_wwwm_ext
-    'bert': (BertConfig, BertSoftmaxForNer, BertTokenizer),
+    'bert': ((BertConfig, BertSoftmaxForNer, BertTokenizer), (BertConfig, BertSoftmaxForNen, BertTokenizer))
 }
 
 DATASET = {

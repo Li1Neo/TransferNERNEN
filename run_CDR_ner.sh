@@ -1,6 +1,6 @@
 python run_ner.py \
   --model_type=bert \
-  --model_name_or_path=./data/model_data/biobert-base-cased-v1.2 \
+  --model_name_or_path=./data/model_data/biobert-base-cased-v1.1 \
   --do_train \
   --do_eval \
   --do_lower_case \
@@ -8,10 +8,10 @@ python run_ner.py \
   --data_dir=./datasets/CDR/ \
   --train_max_seq_length=128 \
   --eval_max_seq_length=512 \
-  --per_gpu_train_batch_size=24 \
-  --per_gpu_eval_batch_size=24 \
+  --per_gpu_train_batch_size=16 \
+  --per_gpu_eval_batch_size=64 \
   --learning_rate=3e-5 \
-  --num_train_epochs=3 \
+  --num_train_epochs=20 \
   --logging_steps=-1 \
   --save_steps=-1 \
   --output_dir=./outputs \

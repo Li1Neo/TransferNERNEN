@@ -126,19 +126,19 @@ if __name__ == '__main__':
             "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
 
     # Setup CUDA, GPU
-    device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu") # cpu
-    args.n_gpu = torch.cuda.device_count() # 0
-    args.device = device # cpu
-    logger.warning("device: %s, n_gpu: %s", device, args.n_gpu)
+    device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu") # cuda
+    args.n_gpu = torch.cuda.device_count() # 1
+    args.device = device # cuda
+    logger.warning("device: %s, n_gpu: %s", device, args.n_gpu) # device: cuda, n_gpu: 1
     # Set seed
     seed_everything(args.seed)
 
     # Prepare NER task
     args.dataset = args.dataset.lower() # 'cdr'
-    if args.dataset not in processors: # from processors.ner_seq import ner_processors as processors
+    if args.dataset not in processors: # {'cdr': <class 'data_process.CDRProcessor'>, 'ncbi': <class 'data_process.NCBIProcessor'>}
         raise ValueError("Task not found: %s" % args.dataset)
     processor_class = processors[args.dataset] # <class 'data_process.CDRProcessor'>
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type][0]
     # config_class: BertConfig
     # model_class: BertSoftmaxForNer 或 BertSoftmaxForNen
     # tokenizer_class: BertTokenizer
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     # TODO
     if args.task_name == 'ner': # NER任务
         label_list = data_processor.get_ner_labels() # ['X', 'B-Chemical', 'O', 'B-Disease', 'I-Chemical', 'I-Disease']
-    else: # NEN任务
+    elif args.task_name == 'nen': # NEN任务
         label_list = data_processor.get_nen_labels()
     args.id2label = {i: label for i, label in enumerate(label_list)} # {0: 'X', 1: 'B-Chemical', 2: 'O', 3: 'B-Disease', 4: 'I-Chemical', 5: 'I-Disease'}
     args.label2id = {label: i for i, label in enumerate(label_list)} # {'X': 0, 'B-Chemical': 1, 'O': 2, 'B-Disease': 3, 'I-Chemical': 4, 'I-Disease': 5}
@@ -157,7 +157,7 @@ if __name__ == '__main__':
     config = config_class.from_pretrained(args.model_name_or_path, num_labels=num_labels)
     config.loss_type = args.loss_type # 'ce'
     model = model_class.from_pretrained(args.model_name_or_path, config=config)
-    model.to(args.device)
+    model.to(args.device) # model.device = cuda:0
     logger.info("Training/evaluation parameters %s", args)
     # Training
     if args.do_train:
@@ -173,7 +173,7 @@ if __name__ == '__main__':
     # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
     if args.do_train:
         # Create output directory if needed
-        if not os.path.exists(args.output_dir):
+        if not os.path.exists(args.output_dir): # './outputs/cdr/ner/bert'
             os.makedirs(args.output_dir)
         logger.info("Saving model checkpoint to %s", args.output_dir)
         # Save a trained model, configuration and tokenizer using `save_pretrained()`.
@@ -182,30 +182,49 @@ if __name__ == '__main__':
             model.module if hasattr(model, "module") else model
         )  # Take care of distributed/parallel training
         model_to_save.save_pretrained(args.output_dir)
-        tokenizer.save_vocabulary(args.output_dir)
+        # ./outputs/cdr/ner/bert/config.json
+        # ./outputs/cdr/ner/bert/pytorch_model.bin
+        tokenizer.save_vocabulary(args.output_dir) # ./outputs/cdr/ner/bert/vocab.txt
         # Good practice: save your training arguments together with the trained model
-        torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
+        torch.save(args, os.path.join(args.output_dir, "training_args.bin")) # ./outputs/cdr/ner/bert/training_args.bin
     # Evaluation
     results = {}
     if args.do_eval:
         tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
-        checkpoints = [args.output_dir]
-        if args.eval_all_checkpoints:
+        checkpoints = [args.output_dir] # ['./outputs/cdr/ner/bert']
+        if args.eval_all_checkpoints: # False
             checkpoints = list(
                 os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True))
             )
+            # glob.glob(args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True):
+            # ['./outputs/cdr/ner/bert\\pytorch_model.bin',
+            #  './outputs/cdr/ner/bert\\checkpoint-243\\pytorch_model.bin',
+            #  './outputs/cdr/ner/bert\\checkpoint-486\\pytorch_model.bin',
+            #  './outputs/cdr/ner/bert\\checkpoint-729\\pytorch_model.bin']
+            # sorted(glob.glob(args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True)):
+            # ['./outputs/cdr/ner/bert\\checkpoint-243\\pytorch_model.bin',
+            #  './outputs/cdr/ner/bert\\checkpoint-486\\pytorch_model.bin',
+            #  './outputs/cdr/ner/bert\\checkpoint-729\\pytorch_model.bin',
+            #  './outputs/cdr/ner/bert\\pytorch_model.bin']
+            # checkpoints:
+            # ['./outputs/cdr/ner/bert\\checkpoint-243',
+            #  './outputs/cdr/ner/bert\\checkpoint-486',
+            #  './outputs/cdr/ner/bert\\checkpoint-729',
+            #  './outputs/cdr/ner/bert']
             logging.getLogger("pytorch_transformers.modeling_utils").setLevel(logging.WARN)  # Reduce logging
         logger.info("Evaluate the following checkpoints: %s", checkpoints)
         for checkpoint in checkpoints:
-            global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
-            prefix = checkpoint.split('/')[-1] if checkpoint.find('checkpoint') != -1 else ""
+            global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else "" # '' 或 '243'
+            prefix = checkpoint.split('/')[-1] if checkpoint.find('checkpoint') != -1 else "" # '' 或 'bert\\checkpoint-243'
             model = model_class.from_pretrained(checkpoint)
             model.to(args.device)
             result = evaluate(args, model, tokenizer, prefix=prefix)
+            # {'acc': 0.8674061787269335, 'recall': 0.8563611491108071, 'f1': 0.8601627734911742, 'loss': 0.11804291268785459}
             if global_step:
                 result = {"{}_{}".format(global_step, k): v for k, v in result.items()}
+                # {'243_acc': ..., '243_recall': ..., '243_f1': ..., '243_loss': ...}
             results.update(result)
-        output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
+        output_eval_file = os.path.join(args.output_dir, "eval_results.txt") # './outputs/cdr/ner/bert\\eval_results.txt'
         with open(output_eval_file, "w") as writer:
             for key in sorted(results.keys()):
                 writer.write("{} = {}\n".format(key, str(results[key])))

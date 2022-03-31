@@ -197,7 +197,13 @@ def get_entity_bio(seq,id2label):
         #output
         [['PER', 0,1], ['LOC', 3, 3]]
     """
+    # 如seq：['B-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'O', 'B-Chemical', 'I-Chemical', 'I-Chemical', 'I-Chemical', 'B-Disease', 'O', 'O', 'O', 'O', 'O']
     chunks = []
+    # chunks:
+    # [] ->
+    # [['Disease', 0, 8]] ->
+    # ... ->
+    # [['Disease', 0, 8], ['Chemical', 10, 13], ['Disease', 14, 14]]
     chunk = [-1, -1, -1]
     for indx, tag in enumerate(seq):
         if not isinstance(tag, str):
