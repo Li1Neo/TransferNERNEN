@@ -1,6 +1,6 @@
 python run_nen.py \
   --model_type=bert \
-  --model_name_or_path=./data/model_data/biobert-base-cased-v1.1 \
+  --model_name_or_path=./data/model_data/biobert-base-cased-v1.1 \ # ./save/cdr/ner/checkpoint-5460
   --do_train \
   --do_eval \
   --do_lower_case \

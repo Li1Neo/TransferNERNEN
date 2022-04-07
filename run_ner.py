@@ -134,7 +134,7 @@ if __name__ == '__main__':
     if args.dataset not in processors: # {'cdr': <class 'data_process.CDRProcessor'>, 'ncbi': <class 'data_process.NCBIProcessor'>}
         raise ValueError("Task not found: %s" % args.dataset)
     processor_class = processors[args.dataset] # <class 'data_process.CDRProcessor'>
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type][0]
+    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type][0] # 0: BertSoftmaxForNer, 1: BertSoftmaxForNen #TODO
     # config_class: BertConfig
     # model_class: BertSoftmaxForNer 或 BertSoftmaxForNen
     # tokenizer_class: BertTokenizer

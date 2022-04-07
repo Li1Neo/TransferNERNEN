@@ -134,23 +134,25 @@ if __name__ == '__main__':
     if args.dataset not in processors: # {'cdr': <class 'data_process.CDRProcessor'>, 'ncbi': <class 'data_process.NCBIProcessor'>}
         raise ValueError("Task not found: %s" % args.dataset)
     processor_class = processors[args.dataset] # <class 'data_process.CDRProcessor'>
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type][0]
+    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type][1] # 0: BertSoftmaxForNer, 1: BertSoftmaxForNen #TODO
     # config_class: BertConfig
     # model_class: BertSoftmaxForNer 或 BertSoftmaxForNen
     # tokenizer_class: BertTokenizer
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path, do_lower_case=args.do_lower_case)
     DICT_DATASET = DATASET[args.dataset]["to"] # {'train': 'CDR/train.txt', 'dev': 'CDR/dev.txt', 'test': 'CDR/test.txt', 'zs_test': 'CDR/zs_test.txt'}
     data_processor = processor_class(tokenizer, DICT_DATASET, args.train_max_seq_length)
-    # TODO
     if args.task_name == 'ner': # NER任务
         label_list = data_processor.get_ner_labels() # ['X', 'B-Chemical', 'O', 'B-Disease', 'I-Chemical', 'I-Disease']
     elif args.task_name == 'nen': # NEN任务
         label_list = data_processor.get_nen_labels()
+        label_list2 = data_processor.get_ner_labels()
+        num_labels2 = len(label_list2)  # 6
     args.id2label = {i: label for i, label in enumerate(label_list)} # {0: 'X', 1: 'D009270', 2: 'O', 3: 'D003000', ..., 1859: 'D014869', 1860: 'D000031', 1861: 'D001247'}
     args.label2id = {label: i for i, label in enumerate(label_list)} # {'X': 0, 'D009270': 1, 'O': 2, 'D003000': 3, ..., 'D014869': 1859, 'D000031': 1860, 'D001247': 1861}
     num_labels = len(label_list) # 1862
     args.model_type = args.model_type.lower() # 'bert'
     config = config_class.from_pretrained(args.model_name_or_path, num_labels=num_labels)
+    config.num_labels2 = num_labels2
     config.loss_type = args.loss_type # 'ce'
     model = model_class.from_pretrained(args.model_name_or_path, config=config)
     model.to(args.device) # model.device = cuda:0

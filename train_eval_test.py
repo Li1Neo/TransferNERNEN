@@ -147,13 +147,14 @@ def train(args, train_dataset, model, tokenizer):
 			inputs, ner, nen, lens = batch
 			if args.task_name == 'ner':
 				labels = ner
+				outputs = model(labels=labels, **inputs)
+				# (
+				# 	tensor(1.9131, device='cuda:0', grad_fn= < NllLossBackward0 >),
+				# 	一个大小为torch.Size([24, 58, num_labels])的tensor
+				# )
 			elif args.task_name == 'nen':
 				labels = nen
-			outputs = model(labels=labels, **inputs)
-			# (
-			# 	tensor(1.9131, device='cuda:0', grad_fn= < NllLossBackward0 >),
-			# 	一个大小为torch.Size([24, 58, num_labels])的tensor
-			# )
+				outputs = model(labels=labels, ner_labels=ner, **inputs)
 			loss = outputs[0]  # model outputs are always tuple in pytorch-transformers (see doc)
 			if args.gradient_accumulation_steps > 1: # 跳过
 				loss = loss / args.gradient_accumulation_steps
@@ -197,7 +198,7 @@ def train(args, train_dataset, model, tokenizer):
 
 def evaluate(args, model, tokenizer, prefix=""):
 	metric = SeqEntityScore(args.id2label, markup=args.markup) # <metrics.ner_metrics.SeqEntityScore 对象>
-	eval_output_dir = args.output_dir # './outputs/cdr/ner/bert'
+	eval_output_dir = args.output_dir # './outputs/cdr/nen/bert'
 	if not os.path.exists(eval_output_dir):
 		os.makedirs(eval_output_dir)
 
@@ -239,9 +240,10 @@ def evaluate(args, model, tokenizer, prefix=""):
 			inputs, ner, nen, lens = batch
 			if args.task_name == 'ner':
 				labels = ner
+				outputs = model(labels=labels, **inputs)
 			elif args.task_name == 'nen':
 				labels = nen
-			outputs = model(labels=labels, **inputs)
+				outputs = model(labels=labels, ner_labels=ner, **inputs)
 		tmp_eval_loss, logits = outputs[:2]
 		eval_loss += tmp_eval_loss.item() # 0.0876813605427742
 		nb_eval_steps += 1
@@ -303,11 +305,12 @@ def evaluate(args, model, tokenizer, prefix=""):
 	logger.info("***** Eval results %s *****", prefix)
 	info = "-".join([f' {key}: {value:.4f} ' for key, value in results.items()])
 	logger.info(info)
-	logger.info("***** Entity results %s *****", prefix)
-	for key in sorted(entity_info.keys()):
-		logger.info("******* %s results ********" % key)
-		info = "-".join([f' {key}: {value:.4f} ' for key, value in entity_info[key].items()])
-		logger.info(info)
+	if args.task_name == 'ner':
+		logger.info("***** Entity results %s *****", prefix)
+		for key in sorted(entity_info.keys()):
+			logger.info("******* %s results ********" % key)
+			info = "-".join([f' {key}: {value:.4f} ' for key, value in entity_info[key].items() if value > 0])
+			logger.info(info)
 	return results
 
 import json
