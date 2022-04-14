@@ -99,15 +99,19 @@ class BertSoftmaxForNen(BertPreTrainedModel): # multitask
         self.num_labels2 = config.num_labels2  # 辅助任务ner
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels) # nen主任务
+        self.classifier = nn.Linear(config.hidden_size*2, config.num_labels) # nen主任务
         self.classifier2 = nn.Linear(config.hidden_size, config.num_labels2) # ner
+        self.label_embedding = nn.Embedding(config.num_labels2, config.hidden_size)
         self.init_weights()
 
     def forward(self, input_ids, attention_mask=None, token_type_ids=None, labels=None, ner_labels=None):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
         sequence_output = outputs[0]
-        sequence_output = self.dropout(sequence_output)
-        logits = self.classifier(sequence_output) # nen
+        # sequence_output = self.dropout(sequence_output)
+        ner_embedding = self.label_embedding(ner_labels)*10
+        ccat = torch.cat((sequence_output , ner_embedding),-1)
+        ccat = self.dropout(ccat)
+        logits = self.classifier(ccat) # nen
         logits2 = self.classifier2(sequence_output) # ner
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
         if labels is not None and ner_labels is not None:
@@ -120,16 +124,28 @@ class BertSoftmaxForNen(BertPreTrainedModel): # multitask
                 active_logits2 = logits2.view(-1, self.num_labels2)[active_loss] # ner
                 active_labels = labels.view(-1)[active_loss]
                 active_labels2 = ner_labels.view(-1)[active_loss]
-                loss = loss_fct(active_logits, active_labels) + loss_fct2(active_logits2, active_labels2)
+                # loss = loss_fct(active_logits, active_labels) + loss_fct2(active_logits2, active_labels2)
+                loss = loss_fct(active_logits, active_labels)
             else:
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1)) + loss_fct2(logits2.view(-1, self.num_labels2), ner_labels.view(-1))
             outputs = (loss,) + outputs
         return outputs  # (loss), scores, (hidden_states), (attentions)
 
 
-class Transfernet(nn.Module):
-    def __init__(self):
-        super(Transfernet, self).__init__()
 
-    def forward(self, input_ids, attention_mask=None, token_type_ids=None, labels=None):
-        pass
+class Transfernet(nn.Module):
+    def __init__(self, config):
+        super(Transfernet, self).__init__(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.fc1 = nn.Linear(config.hidden_size, config.hidden_size)
+        self.fc1 = nn.Linear(config.hidden_size, config.hidden_size)
+        self.relu = nn.ReLu()
+        self.init_weights()
+        self.loss = torch.nn.MSELoss()
+
+    def forward(self, x, y):
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        loss = self.loss(x, y)
+        return loss, x

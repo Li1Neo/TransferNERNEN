@@ -30,9 +30,9 @@ class NERNENDataset(Dataset): # 继承torch.utils.data.Dataset
         self.mode = mode
 
     def __getitem__(self, item):
-        if self.mode != 'test': # train和eval模式
+        if self.mode != 'zs_test': # train和eval模式
             return self.sentences[item], self.ner[item], self.nen[item], self.len[item]
-        else: # test模式
+        else: # zero shot test模式
             return self.sentences[item], self.len[item]
 
     def __len__(self):

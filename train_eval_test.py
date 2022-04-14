@@ -171,7 +171,7 @@ def train(args, train_dataset, model, tokenizer):
 					# Log metrics
 					print(" ")
 					# Only evaluate when single GPU otherwise metrics may not average well
-					evaluate(args, model, tokenizer)
+					evaluate(args, model, tokenizer, dataset='test')
 
 				if args.save_steps > 0 and global_step % args.save_steps == 0: # 每args.save_steps个steps保存一下checkpoint
 					# Save model checkpoint
@@ -196,7 +196,7 @@ def train(args, train_dataset, model, tokenizer):
 			torch.cuda.empty_cache()
 	return global_step, tr_loss / global_step
 
-def evaluate(args, model, tokenizer, prefix=""):
+def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 	metric = SeqEntityScore(args.id2label, markup=args.markup) # <metrics.ner_metrics.SeqEntityScore 对象>
 	eval_output_dir = args.output_dir # './outputs/cdr/nen/bert'
 	if not os.path.exists(eval_output_dir):
@@ -211,19 +211,28 @@ def evaluate(args, model, tokenizer, prefix=""):
 	DICT_DATASET = DATASET[args.dataset]["to"] # {'train': 'CDR/train.txt', 'dev': 'CDR/dev.txt', 'test': 'CDR/test.txt', 'zs_test': 'CDR/zs_test.txt'}
 	processor_class = processors[args.dataset]  # <class 'data_process.Processor'>
 	data_processor = processor_class(tokenizer, DICT_DATASET, args.eval_max_seq_length)
-	eval_dataset = load_and_cache_examples(data_processor, cached_eval_dataset_root, data_type='eval')
-
+	eval_dataset = load_and_cache_examples(data_processor, cached_eval_dataset_root, data_type=dataset)
+	if args.task_name == 'nen':
+		if dataset == 'test' or dataset == 'zs-test':
+			import pickle
+			test_nen_label_pkl_file = open('./data/dataset_cache/' + args.dataset + '/test_nen_labels.pkl', 'rb')
+			test_nen_labels = pickle.load(test_nen_label_pkl_file)
+			args.id2label = {i: label for i, label in enumerate(test_nen_labels)}
+			args.label2id = {label: i for i, label in enumerate(test_nen_labels)}
+			test_nen_label_pkl_file.close()
 	args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
 	# Note that DistributedSampler samples randomly
 	# eval_sampler = SequentialSampler(eval_dataset)
 	eval_dataloader = DataLoader(eval_dataset, batch_size=args.eval_batch_size, shuffle=False)
 	# Eval!
-	logger.info("***** Running evaluation %s *****", prefix)
+	logger.info("***** Running evaluation %s dataset %s *****", dataset, prefix)
 	logger.info("  Num examples = %d", len(eval_dataset))
 	logger.info("  Batch size = %d", args.eval_batch_size)
 	eval_loss = 0.0
 	nb_eval_steps = 0
 	pbar = ProgressBar(n_total=len(eval_dataloader), desc="Evaluating")
+
+	ner_f1s, nen_f1s = [], []  # TODO  离谱的指标
 	for step, batch in enumerate(eval_dataloader):
 		batch = collate_fn(batch)
 		model.eval()
@@ -243,9 +252,15 @@ def evaluate(args, model, tokenizer, prefix=""):
 				outputs = model(labels=labels, **inputs)
 			elif args.task_name == 'nen':
 				labels = nen
-				outputs = model(labels=labels, ner_labels=ner, **inputs)
-		tmp_eval_loss, logits = outputs[:2]
-		eval_loss += tmp_eval_loss.item() # 0.0876813605427742
+				if dataset == 'test' or dataset == 'zs-test':
+					outputs = model(ner_labels=ner, **inputs) # 长为1的元组，只由logits组成
+				else:
+					outputs = model(labels=labels, ner_labels=ner, **inputs)
+		if dataset == 'test' or dataset == 'zs-test':
+			logits = outputs[0]
+		else:
+			tmp_eval_loss, logits = outputs[:2]
+			eval_loss += tmp_eval_loss.item() # 0.0876813605427742
 		nb_eval_steps += 1
 		preds = np.argmax(logits.cpu().numpy(), axis=2).tolist()
 		# 预测的token标签，大小为(16, 55)的列表
@@ -261,45 +276,70 @@ def evaluate(args, model, tokenizer, prefix=""):
 		#  [2, 2, 2, 1, 4, ..., 0, 0, 0]]
 		input_lens = lens.cpu().numpy().tolist()
 		# 有效长度，长为16的列表：[22, 35, 46, 17, 26, 28, 25, 39, 12, 23, 27, 23, 33, 31, 55, 39]
-		for i, label in enumerate(out_label_ids):
-			# 如label：[2, 3, 5, 5, 5, ..., 0, 0, 0]  #长55
-			temp_1 = []
-			temp_2 = []
-			for j, m in enumerate(label): # 如j:0, m:2
-				if j == 0: # 跳过第一个标签，CLS标签
-					continue
-				elif j == input_lens[i] - 1: # 遇到最后一个有效标签SEP时，表示遍历完一句话，忽略这个SEP标签，并metric.update，结束循环
-					metric.update(pred_paths=[temp_2], label_paths=[temp_1])
-					# pred_paths：[[3, 5, 5, 5, 5, 5, 5, 5, 5, 2, 1, 4, 4, 4, 3, 2, 2, 2, 2, 2]]
-					# label_paths：[['B-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'O', 'B-Chemical', 'I-Chemical', 'I-Chemical', 'I-Chemical', 'B-Disease', 'O', 'O', 'O', 'O', 'O']]
-					break
-				else: # 对每个标签,从id转成标签标识符，并添加到temp_1、temp_2
-					temp_1.append(args.id2label[out_label_ids[i][j]])
-					# out_label_ids[i][j]：3
-					# args.id2label[out_label_ids[i][j]]：'B-Disease'
-					temp_2.append(preds[i][j])
-					# preds[i][j]：3
-			# temp_1:
-			# [] ->
-			# ['B-Disease'] ->
-			# ['B-Disease', 'I-Disease'] ->
-			# ... ->
-			# ['B-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'O', 'B-Chemical', 'I-Chemical', 'I-Chemical', 'I-Chemical', 'B-Disease', 'O', 'O', 'O', 'O', 'O']
 
-			# temp_2:
-			# [] ->
-			# [3] ->
-			# [3, 5] ->
-			# ... ->
-			# [3, 5, 5, 5, 5, 5, 5, 5, 5, 2, 1, 4, 4, 4, 3, 2, 2, 2, 2, 2]
-		pbar(step)
+		if args.task_name == 'nen': # TODO  离谱的指标
+			from sklearn.metrics import (
+				f1_score,
+				precision_score,
+				recall_score,
+				accuracy_score
+			)
+			def calc_nen_f1(true, pred, real_len):
+				y_real, pred_real = [], []
+				for i in range(len(real_len)):
+					y_real += true[i, 1:1+real_len[i]-2].tolist()
+					pred_real += pred[i, 1:1+real_len[i]-2].tolist()
+
+				prec = precision_score(y_real, pred_real, average='weighted')
+				reca = recall_score(y_real, pred_real, average='weighted')
+				f1 = f1_score(y_real, pred_real, average='weighted')
+				acc = accuracy_score(y_real, pred_real)
+				return (prec, reca, f1, acc)
+			P, R, F1, ACC = calc_nen_f1(np.array(out_label_ids), np.array(preds), input_lens)
+			nen_f1s.append(F1)
+		# for i, label in enumerate(out_label_ids):
+		# 	# 如label：[2, 3, 5, 5, 5, ..., 0, 0, 0]  #长55
+		# 	temp_1 = []
+		# 	temp_2 = []
+		# 	for j, m in enumerate(label): # 如j:0, m:2
+		# 		if j == 0: # 跳过第一个标签，CLS标签
+		# 			continue
+		# 		elif j == input_lens[i] - 1: # 遇到最后一个有效标签SEP时，表示遍历完一句话，忽略这个SEP标签，并metric.update，结束循环
+		# 			metric.update(pred_paths=[temp_2], label_paths=[temp_1])
+		# 			# pred_paths：[[3, 5, 5, 5, 5, 5, 5, 5, 5, 2, 1, 4, 4, 4, 3, 2, 2, 2, 2, 2]]
+		# 			# label_paths：[['B-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'O', 'B-Chemical', 'I-Chemical', 'I-Chemical', 'I-Chemical', 'B-Disease', 'O', 'O', 'O', 'O', 'O']]
+		# 			break
+		# 		else: # 对每个标签,从id转成标签标识符，并添加到temp_1、temp_2
+		# 			temp_1.append(args.id2label[out_label_ids[i][j]])
+		# 			# out_label_ids[i][j]：3
+		# 			# args.id2label[out_label_ids[i][j]]：'B-Disease'
+		# 			temp_2.append(args.id2label[preds[i][j]])
+		# 			# preds[i][j]：3
+		# 	# temp_1:
+		# 	# [] ->
+		# 	# ['B-Disease'] ->
+		# 	# ['B-Disease', 'I-Disease'] ->
+		# 	# ... ->
+		# 	# ['B-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'I-Disease', 'O', 'B-Chemical', 'I-Chemical', 'I-Chemical', 'I-Chemical', 'B-Disease', 'O', 'O', 'O', 'O', 'O']
+		#
+		# 	# temp_2:
+		# 	# [] ->
+		# 	# [3] ->
+		# 	# [3, 5] ->
+		# 	# ... ->
+		# 	# [3, 5, 5, 5, 5, 5, 5, 5, 5, 2, 1, 4, 4, 4, 3, 2, 2, 2, 2, 2]
+		# 	lll =1
+		# pbar(step)
+	nen_f1 = np.mean(nen_f1s)
+	print(nen_f1)
 	logger.info("\n")
-	eval_loss = eval_loss / nb_eval_steps # 0.10104974798442846
 	eval_info, entity_info = metric.result()
 	# eval_info: {'acc': 0.8639983013058711, 'recall': 0.8563611491108071, 'f1': 0.8601627734911742} 总体的P、R、f1
 	# entity_info: {'Disease': {'acc': 0.7941, 'recall': 0.7819, 'f1': 0.788}, 'Chemical': {'acc': 0.9183, 'recall': 0.9149, 'f1': 0.9166}} 各个类别的P、R、f1
 	results = {f'{key}': value for key, value in eval_info.items()}
-	results['loss'] = eval_loss
+	if dataset != 'test' and dataset != 'zs-test':
+		eval_loss = eval_loss / nb_eval_steps  # 0.10104974798442846
+		results['loss'] = eval_loss
 	# results:
 	# {'acc': 0.8639983013058711, 'recall': 0.8563611491108071, 'f1': 0.8601627734911742, 'loss': 0.10104974798442846}
 	logger.info("***** Eval results %s *****", prefix)

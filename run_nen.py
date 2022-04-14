@@ -168,6 +168,19 @@ if __name__ == '__main__':
         train_dataset = load_and_cache_examples(data_processor, cached_train_dataset_root, data_type='train')
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
+        # TODO   do train dev set
+        cached_eval_dataset_root = './data/dataset_cache/'  # './data/dataset_cache/'
+        if not os.path.exists(cached_eval_dataset_root):
+            os.mkdir(cached_eval_dataset_root)
+        cached_eval_dataset_root = cached_eval_dataset_root + '{}'.format(args.dataset)  # './data/dataset_cache/cdr'
+        if not os.path.exists(cached_eval_dataset_root):
+            os.mkdir(cached_eval_dataset_root)
+        DICT_DATASET = DATASET[args.dataset]["to"]  # {'train': 'CDR/train.txt', 'dev': 'CDR/dev.txt', 'test': 'CDR/test.txt', 'zs_test': 'CDR/zs_test.txt'}
+        processor_class = processors[args.dataset]  # <class 'data_process.Processor'>
+        data_processor = processor_class(tokenizer, DICT_DATASET, args.eval_max_seq_length)
+        eval_dataset = load_and_cache_examples(data_processor, cached_eval_dataset_root, data_type='eval')
+        global_step, tr_loss = train(args, eval_dataset, model, tokenizer)
+        logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
     # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
     if args.do_train:
         # Create output directory if needed
@@ -216,7 +229,7 @@ if __name__ == '__main__':
             prefix = checkpoint.split('/')[-1] if checkpoint.find('checkpoint') != -1 else "" # '' 或 'bert\\checkpoint-243'
             model = model_class.from_pretrained(checkpoint)
             model.to(args.device)
-            result = evaluate(args, model, tokenizer, prefix=prefix)
+            result = evaluate(args, model, tokenizer, prefix=prefix, dataset='test')
             # {'acc': 0.8674061787269335, 'recall': 0.8563611491108071, 'f1': 0.8601627734911742, 'loss': 0.11804291268785459}
             if global_step:
                 result = {"{}_{}".format(global_step, k): v for k, v in result.items()}
