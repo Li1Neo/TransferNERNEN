@@ -238,6 +238,7 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 	ner_f1s, nen_f1s = [], []  # TODO  离谱的指标
 	y_reals = []
 	pred_reals = []
+	inputs_ids = []
 	for step, batch in enumerate(eval_dataloader):
 		batch = collate_fn(batch)
 		model.eval()
@@ -280,6 +281,7 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 		#  [2, 2, 2, 2, 2, ..., 0, 0, 0],
 		#  ...,
 		#  [2, 2, 2, 1, 4, ..., 0, 0, 0]]
+		inputs_id = inputs.cpu().numpy().tolist()
 		input_lens = lens.cpu().numpy().tolist()
 		# 有效长度，长为16的列表：[22, 35, 46, 17, 26, 28, 25, 39, 12, 23, 27, 23, 33, 31, 55, 39]
 		input_word_mask = word_mask.cpu().numpy().tolist()
@@ -291,19 +293,22 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 				recall_score,
 				accuracy_score
 			)
-			def calc_nen_f1(true, pred, real_len, word_mask):
+			def calc_nen_f1(true, pred, input_id, real_len, word_mask):
 				# true: 大小为(64, 60)的ndarray
 				# pred: 大小为(64, 60)的ndarray
 				# real_len: 大小为(64)的ndarray
 				y_real, pred_real = [], []
+				inputs = []
 				for i in range(len(real_len)):
 					cur_y = true[i, 1:1 + real_len[i] - 2]
 					cur_p = pred[i, 1:1 + real_len[i] - 2]
+					cur_input = input_id[i, 1:1 + real_len[i] - 2]
 					# cur_mask = word_mask[i, 1:1 + real_len[i] - 2] == 1
 					# y_real += cur_y[cur_mask].tolist()
 					# pred_real += cur_p[cur_mask].tolist()
 					y_real.append(cur_y.tolist())
 					pred_real.append(cur_p.tolist())
+					inputs.append(cur_input.tolist())
 
 				flat = lambda x : [i for item in x for i in item]
 				y_real_flat = flat(y_real)
@@ -318,11 +323,13 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 				reca = recall_score(y_real_flat, pred_real_flat, average='weighted')
 				f1 = f1_score(y_real_flat, pred_real_flat, average='micro')
 				acc = accuracy_score(y_real_flat, pred_real_flat)
-				return (prec, reca, f1, acc, y_real, pred_real)
-			P, R, F1, ACC , y_real, pred_real = calc_nen_f1(np.array(out_label_ids), np.array(preds), input_lens, np.array(input_word_mask))
+				return (prec, reca, f1, acc, y_real, pred_real, inputs)
+			P, R, F1, ACC , y_real, pred_real, inputs_id = calc_nen_f1(np.array(out_label_ids), np.array(preds), np.array(inputs_id), input_lens, np.array(input_word_mask))
+			
 			nen_f1s.append(F1)
-			y_reals.extend(y_real)
-			pred_reals.extend(pred_real)
+			inputs_ids.extend(tokenizer.decode(inputs_id))
+			y_reals.extend([args.id2label[tag] for tag in y_real])
+			pred_reals.extend([args.id2label[tag] for tag in pred_real])
 
 		# for i, label in enumerate(out_label_ids):
 		# 	# 如label：[2, 3, 5, 5, 5, ..., 0, 0, 0]  #长55
@@ -355,7 +362,6 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 		# 	# [3, 5] ->
 		# 	# ... ->
 		# 	# [3, 5, 5, 5, 5, 5, 5, 5, 5, 2, 1, 4, 4, 4, 3, 2, 2, 2, 2, 2]
-		# 	lll =1
 		# pbar(step)
 
 	nen_f1 = np.mean(nen_f1s)
