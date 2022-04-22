@@ -281,7 +281,7 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 		#  [2, 2, 2, 2, 2, ..., 0, 0, 0],
 		#  ...,
 		#  [2, 2, 2, 1, 4, ..., 0, 0, 0]]
-		inputs_id = inputs.cpu().numpy().tolist()
+		inputs_id = inputs['input_ids'].cpu().numpy().tolist()
 		input_lens = lens.cpu().numpy().tolist()
 		# 有效长度，长为16的列表：[22, 35, 46, 17, 26, 28, 25, 39, 12, 23, 27, 23, 33, 31, 55, 39]
 		input_word_mask = word_mask.cpu().numpy().tolist()
@@ -308,7 +308,7 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 					# pred_real += cur_p[cur_mask].tolist()
 					y_real.append(cur_y.tolist())
 					pred_real.append(cur_p.tolist())
-					inputs.append(cur_input.tolist())
+					inputs.append(tokenizer.decode(cur_input.tolist()))
 
 				flat = lambda x : [i for item in x for i in item]
 				y_real_flat = flat(y_real)
@@ -327,9 +327,9 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 			P, R, F1, ACC , y_real, pred_real, inputs_id = calc_nen_f1(np.array(out_label_ids), np.array(preds), np.array(inputs_id), input_lens, np.array(input_word_mask))
 			
 			nen_f1s.append(F1)
-			inputs_ids.extend(tokenizer.decode(inputs_id))
-			y_reals.extend([args.id2label[tag] for tag in y_real])
-			pred_reals.extend([args.id2label[tag] for tag in pred_real])
+			inputs_ids.extend(inputs_id)
+			y_reals.extend([[args.id2label[tag] for tag in item] for item in y_real])
+			pred_reals.extend([[args.id2label[tag] for tag in item] for item in pred_real])
 
 		# for i, label in enumerate(out_label_ids):
 		# 	# 如label：[2, 3, 5, 5, 5, ..., 0, 0, 0]  #长55
@@ -366,6 +366,13 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 
 	nen_f1 = np.mean(nen_f1s)
 	print(nen_f1)
+	f = open(args.dataset+'_nen_result.txt', 'w')
+	for i in range(len(y_reals)):
+		f.write(inputs_ids[i] + '\n')
+		f.write(str(pred_reals[i]) + '\n')
+		f.write(str(y_reals[i]) + '\n')
+		f.write('\n')
+	f.close()
 	logger.info("\n")
 	eval_info, entity_info = metric.result()
 	# eval_info: {'acc': 0.8639983013058711, 'recall': 0.8563611491108071, 'f1': 0.8601627734911742} 总体的P、R、f1
