@@ -321,8 +321,8 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 
 				prec = precision_score(y_real_flat, pred_real_flat, average='weighted')
 				reca = recall_score(y_real_flat, pred_real_flat, average='weighted')
-				f1 = f1_score(y_real_flat, pred_real_flat, average='micro')
-				acc = accuracy_score(y_real_flat, pred_real_flat)
+				acc = f1_score(y_real_flat, [2]*len(pred_real_flat), average='macro')
+				f1 = accuracy_score(y_real_flat,[2]*len(pred_real_flat))
 				return (prec, reca, f1, acc, y_real, pred_real, inputs)
 			P, R, F1, ACC , y_real, pred_real, inputs_id = calc_nen_f1(np.array(out_label_ids), np.array(preds), np.array(inputs_id), input_lens, np.array(input_word_mask))
 			
