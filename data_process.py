@@ -138,6 +138,7 @@ class CDRProcessor(object):
         parsed_sent_indices = []
         parsed_sent_segments = []
         parsed_sent_attention_masks = []
+        parsed_word_mask = []
         parsed_ner_labels = []
         parsed_nen_labels = []
         parsed_real_lens = []
@@ -151,6 +152,7 @@ class CDRProcessor(object):
                 sent_indice,
                 sent_segment,
                 sent_attention_mask,
+                word_mask,
                 t_ner_label,
                 t_nen_label,
                 sent_len
@@ -158,6 +160,7 @@ class CDRProcessor(object):
             parsed_sent_indices.append(sent_indice)
             parsed_sent_segments.append(sent_segment)
             parsed_sent_attention_masks.append(sent_attention_mask)
+            parsed_word_mask.append(word_mask)
             parsed_ner_labels.append(t_ner_label)
             parsed_nen_labels.append(t_nen_label)
             parsed_real_lens.append(sent_len)
@@ -168,7 +171,7 @@ class CDRProcessor(object):
         # 对于训练集，parsed_ner_labels: 长为5819的列表，每个元素为一个torch.Size([128])的tensor
         # 对于训练集，parsed_nen_labels: 长为5819的列表，每个元素为一个torch.Size([128])的tensor
         # 对于训练集，parsed_real_lens: 长为5819的列表，每个元素为一个整型，表示该句子的真实长度
-        return (parsed_sent_indices, parsed_sent_segments, parsed_sent_attention_masks, parsed_ner_labels, parsed_nen_labels, parsed_real_lens) # 6个元素组成的元组
+        return (parsed_sent_indices, parsed_sent_segments, parsed_sent_attention_masks, parsed_word_mask, parsed_ner_labels, parsed_nen_labels, parsed_real_lens) # 6个元素组成的元组
 
     def tokenize_sentence(self, sentence, ner_label, nen_label):
         # sentence:['Naloxone', 'reverses', 'the', 'antihypertensive', 'effect', 'of', 'clonidine', '.']
@@ -176,7 +179,7 @@ class CDRProcessor(object):
         # nen_label:['D009270', 'O', 'O', 'O', 'O', 'O', 'D003000', 'O']
 
 
-        tmp_indice, tmp_segment, tmp_attention_mask, tmp_ner_label, tmp_nen_label = [], [], [], [], []
+        tmp_indice, tmp_segment, tmp_attention_mask, tmp_word_mask, tmp_ner_label, tmp_nen_label = [], [], [], [], [], []
         s = sentence[: self.__max_seq_len - 2] # ['Naloxone', 'reverses', 'the', 'antihypertensive', 'effect', 'of', 'clonidine', '.']
         CLS_idx, SEP_idx = 0, 0 # 真正的值为CLS_idx:101   SEP_idx:102
 
@@ -193,6 +196,7 @@ class CDRProcessor(object):
             ind = ind[1:-1] # [9468, 2858, 21501, 1162]
             seg = seg[1:-1] # [0, 0, 0, 0]
             att = att[1:-1] # [1, 1, 1, 1]
+            w_m = [1] + [0] * (len(ind)-1)
 
             for k in range(len(ind)): 
                 if k == 0:
@@ -210,6 +214,7 @@ class CDRProcessor(object):
             tmp_indice.extend(ind) # [] -> [9468, 2858, 21501, 1162] -> [9468, 2858, 21501, 1162, 7936, 1116] -> ... -> [9468, 2858, 21501, 1162, 7936, 1116, 1103, 2848, 7889, 17786, 5026, 2109, 2629, 1104, 172, 4934, 2386, 2042, 119]
             tmp_segment.extend(seg)# [] -> [0, 0, 0, 0] -> [0, 0, 0, 0, 0, 0] -> ... -> [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
             tmp_attention_mask.extend(att) # [] -> [1, 1, 1, 1] -> [1, 1, 1, 1, 1, 1] -> ... -> [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+            tmp_word_mask.extend(w_m)
         # 遍历完一句话，如['Naloxone', 'reverses', 'the', 'antihypertensive', 'effect', 'of', 'clonidine', '.']后，
         # tmp_indice:        [9468, 2858, 21501, 1162, 7936, 1116, 1103, 2848, 7889, 17786, 5026, 2109, 2629, 1104, 172, 4934, 2386, 2042, 119]
         # tmp_segment:       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -224,7 +229,8 @@ class CDRProcessor(object):
 
         tmp_attention_mask = tmp_attention_mask[: self.__max_seq_len - 2] # [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
         tmp_attention_mask = [1] + tmp_attention_mask + [1]            # [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-
+        tmp_word_mask = tmp_word_mask[: self.__max_seq_len - 2]
+        tmp_word_mask = [0] + tmp_word_mask + [0]
         tmp_ner_label = tmp_ner_label[: self.__max_seq_len - 2]             # [1, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 4, 4, 4, 2]
         tmp_ner_label = (                                                # [2, 1, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 4, 4, 4, 2, 2]
             [self.__dict_ner_label.index("O")] + tmp_ner_label + [self.__dict_ner_label.index("O")]
@@ -251,6 +257,7 @@ class CDRProcessor(object):
         # tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0,
         #         ...,
         #         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) # torch.Size([self.__max_seq_len]) 
+        tmp_word_mask = List2TensorWithPad(tmp_word_mask, self.__max_seq_len, 0)
         tmp_ner_label = List2TensorWithPad(tmp_ner_label, self.__max_seq_len, self.__dict_ner_label.index("X"))
         # tensor([2, 1, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 4, 4, 4, 2, 2, 0, 0, 0,
         #         ...,
@@ -261,7 +268,7 @@ class CDRProcessor(object):
         #         ...,
         #         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) # torch.Size([self.__max_seq_len])
 
-        return (tmp_indice, tmp_segment, tmp_attention_mask, tmp_ner_label, tmp_nen_label, tmp_len) # 返回由5个大小为torch.Size([self.__max_seq_len]) 的tensor 和 1个int 组成的元组
+        return (tmp_indice, tmp_segment, tmp_attention_mask, tmp_word_mask, tmp_ner_label, tmp_nen_label, tmp_len) # 返回由5个大小为torch.Size([self.__max_seq_len]) 的tensor 和 1个int 组成的元组
 
     # def __parse_nen_tag(self, nen_tag): 
         # 修正后的

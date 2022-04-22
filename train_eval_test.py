@@ -81,7 +81,7 @@ def train(args, train_dataset, model, tokenizer):
 		pbar.epoch_start(current_epoch=epoch)
 		for step, batch in enumerate(train_dataloader):
 			# Skip past any already trained steps if resuming training
-			# batch :长为4的列表
+			# batch :长为5的列表
 			# [
 			# 	{
 			# 		'input_ids': tensor([[  101,  1821, 23032,  ...,     0,     0,     0],
@@ -97,6 +97,7 @@ def train(args, train_dataset, model, tokenizer):
 			#        					          ...,
 			#         						  [1, 1, 1,  ..., 0, 0, 0]]) # torch.Size(24, 128)
 			# 	},
+			#   word_mask # torch.Size(24, 128)
 			# 	tensor([[2, 3, 5,  ..., 0, 0, 0],
 			#         	[2, 2, 2,  ..., 0, 0, 0],
 			#         	...,
@@ -123,6 +124,7 @@ def train(args, train_dataset, model, tokenizer):
 			# 								  ...,
 			# 								  [1, 1, 1, ..., 0, 0, 0]]) # torch.Size(24, 77)
 			# 	},
+			#   word_mask # torch.Size(24, 77)
 			# 	tensor([[2, 3, 5, ..., 0, 0, 0],
 			# 			[2, 2, 2, ..., 0, 0, 0],
 			# 			...,
@@ -143,8 +145,9 @@ def train(args, train_dataset, model, tokenizer):
 			batch[1] = batch[1].to(args.device)
 			batch[2] = batch[2].to(args.device)
 			batch[3] = batch[3].to(args.device)
+			batch[4] = batch[4].to(args.device)
 			batch = tuple(t for t in batch)
-			inputs, ner, nen, lens = batch
+			inputs, word_mask, ner, nen, lens = batch
 			if args.task_name == 'ner':
 				labels = ner
 				outputs = model(labels=labels, **inputs)
@@ -233,6 +236,8 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 	pbar = ProgressBar(n_total=len(eval_dataloader), desc="Evaluating")
 
 	ner_f1s, nen_f1s = [], []  # TODO  离谱的指标
+	y_reals = []
+	pred_reals = []
 	for step, batch in enumerate(eval_dataloader):
 		batch = collate_fn(batch)
 		model.eval()
@@ -243,10 +248,11 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 		batch[1] = batch[1].to(args.device)
 		batch[2] = batch[2].to(args.device)
 		batch[3] = batch[3].to(args.device)
+		batch[4] = batch[4].to(args.device)
 		batch = tuple(t for t in batch)
 
 		with torch.no_grad():
-			inputs, ner, nen, lens = batch
+			inputs, word_mask, ner, nen, lens = batch
 			if args.task_name == 'ner':
 				labels = ner
 				outputs = model(labels=labels, **inputs)
@@ -276,6 +282,7 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 		#  [2, 2, 2, 1, 4, ..., 0, 0, 0]]
 		input_lens = lens.cpu().numpy().tolist()
 		# 有效长度，长为16的列表：[22, 35, 46, 17, 26, 28, 25, 39, 12, 23, 27, 23, 33, 31, 55, 39]
+		input_word_mask = word_mask.cpu().numpy().tolist()
 
 		if args.task_name == 'nen': # TODO  离谱的指标
 			from sklearn.metrics import (
@@ -284,19 +291,39 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 				recall_score,
 				accuracy_score
 			)
-			def calc_nen_f1(true, pred, real_len):
+			def calc_nen_f1(true, pred, real_len, word_mask):
+				# true: 大小为(64, 60)的ndarray
+				# pred: 大小为(64, 60)的ndarray
+				# real_len: 大小为(64)的ndarray
 				y_real, pred_real = [], []
 				for i in range(len(real_len)):
-					y_real += true[i, 1:1+real_len[i]-2].tolist()
-					pred_real += pred[i, 1:1+real_len[i]-2].tolist()
+					cur_y = true[i, 1:1 + real_len[i] - 2]
+					cur_p = pred[i, 1:1 + real_len[i] - 2]
+					# cur_mask = word_mask[i, 1:1 + real_len[i] - 2] == 1
+					# y_real += cur_y[cur_mask].tolist()
+					# pred_real += cur_p[cur_mask].tolist()
+					y_real.append(cur_y.tolist())
+					pred_real.append(cur_p.tolist())
 
-				prec = precision_score(y_real, pred_real, average='weighted')
-				reca = recall_score(y_real, pred_real, average='weighted')
-				f1 = f1_score(y_real, pred_real, average='weighted')
-				acc = accuracy_score(y_real, pred_real)
-				return (prec, reca, f1, acc)
-			P, R, F1, ACC = calc_nen_f1(np.array(out_label_ids), np.array(preds), input_lens)
+				flat = lambda x : [i for item in x for i in item]
+				y_real_flat = flat(y_real)
+				pred_real_flat = flat(pred_real)
+				y_real_flat = np.array(y_real_flat)
+				pred_real_flat = np.array(pred_real_flat)
+				# o_m = y_real!=2
+				# y_real = y_real[o_m]
+				# pred_real = pred_real[o_m]
+
+				prec = precision_score(y_real_flat, pred_real_flat, average='weighted')
+				reca = recall_score(y_real_flat, pred_real_flat, average='weighted')
+				f1 = f1_score(y_real_flat, pred_real_flat, average='micro')
+				acc = accuracy_score(y_real_flat, pred_real_flat)
+				return (prec, reca, f1, acc, y_real, pred_real)
+			P, R, F1, ACC , y_real, pred_real = calc_nen_f1(np.array(out_label_ids), np.array(preds), input_lens, np.array(input_word_mask))
 			nen_f1s.append(F1)
+			y_reals.extend(y_real)
+			pred_reals.extend(pred_real)
+
 		# for i, label in enumerate(out_label_ids):
 		# 	# 如label：[2, 3, 5, 5, 5, ..., 0, 0, 0]  #长55
 		# 	temp_1 = []
@@ -330,6 +357,7 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 		# 	# [3, 5, 5, 5, 5, 5, 5, 5, 5, 2, 1, 4, 4, 4, 3, 2, 2, 2, 2, 2]
 		# 	lll =1
 		# pbar(step)
+
 	nen_f1 = np.mean(nen_f1s)
 	print(nen_f1)
 	logger.info("\n")

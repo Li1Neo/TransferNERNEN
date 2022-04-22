@@ -21,17 +21,18 @@ class NERNENDataset(Dataset): # 继承torch.utils.data.Dataset
     ):
         super(NERNENDataset, self).__init__()
         '''
-        train_samples：parsed_sent_indices, parsed_sent_segments, parsed_sent_attention_masks, parsed_ner_labels, parsed_nen_labels, parsed_real_lens 6个元素组成的元组,详情见data_process.py中Processor类的__parse_data方法
+        train_samples：parsed_sent_indices, parsed_sent_segments, parsed_sent_attention_masks, parsed_word_mask, parsed_ner_labels, parsed_nen_labels, parsed_real_lens 6个元素组成的元组,详情见data_process.py中Processor类的__parse_data方法
         '''
         self.sentences = [{'input_ids': samples[0][i], 'token_type_ids': samples[1][i], 'attention_mask': samples[2][i]} for i in range(len(samples[0]))]
-        self.ner = samples[3]
-        self.nen = samples[4]
-        self.len = samples[5]
+        self.word_mask = samples[3]
+        self.ner = samples[4]
+        self.nen = samples[5]
+        self.len = samples[6]
         self.mode = mode
 
     def __getitem__(self, item):
         if self.mode != 'zs_test': # train和eval模式
-            return self.sentences[item], self.ner[item], self.nen[item], self.len[item]
+            return self.sentences[item], self.word_mask[item], self.ner[item], self.nen[item], self.len[item]
         else: # zero shot test模式
             return self.sentences[item], self.len[item]
 
@@ -72,16 +73,17 @@ def collate_fn(batch):
     Returns a padded tensor of sequences sorted from longest to shortest,
     """
     # 魔改collate_fn
-    # batch：长为24的列表，每个元素都是长为4的元组
+    # batch：长为24的列表，每个元素都是长为5的元组
 
-    all_sentences, all_ners, all_nens, all_lens = batch
+    all_sentences, all_word_mask, all_ners, all_nens, all_lens = batch
     max_len = max(all_lens).item()
     all_sentences['input_ids'] = all_sentences['input_ids'][:, :max_len]
     all_sentences['token_type_ids'] = all_sentences['token_type_ids'][:, :max_len]
     all_sentences['attention_mask'] = all_sentences['attention_mask'][:, :max_len]
+    all_word_mask = all_word_mask[:, :max_len]
     all_ners = all_ners[:, :max_len]
     all_nens = all_nens[:, :max_len]
-    return [all_sentences, all_ners, all_nens, all_lens]
+    return [all_sentences, all_word_mask, all_ners, all_nens, all_lens]
 
 if __name__ == '__main__':
     cached_train_dataset_file = './data/dataset_cache/train.pt'
