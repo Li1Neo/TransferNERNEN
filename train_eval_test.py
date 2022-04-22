@@ -373,6 +373,18 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 		f.write(str(y_reals[i]) + '\n')
 		f.write('\n')
 	f.close()
+	f = open(args.dataset+'_nen_result_true.txt', 'w')
+	for i in range(len(y_reals)):
+		f.write(inputs_ids[i] + '\n')
+		f.write(str(y_reals[i]) + '\n')
+		f.write('\n')
+	f.close()
+	f = open(args.dataset+'_nen_result_pred.txt', 'w')
+	for i in range(len(y_reals)):
+		f.write(inputs_ids[i] + '\n')
+		f.write(str(pred_reals[i]) + '\n')
+		f.write('\n')
+	f.close()
 	logger.info("\n")
 	eval_info, entity_info = metric.result()
 	# eval_info: {'acc': 0.8639983013058711, 'recall': 0.8563611491108071, 'f1': 0.8601627734911742} 总体的P、R、f1
