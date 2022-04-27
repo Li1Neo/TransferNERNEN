@@ -66,6 +66,24 @@ def load_and_cache_examples(data_processor, cached_dataset_root, data_type='trai
             test_samples = torch.load(cached_test_dataset_file)
         return NERNENDataset(test_samples, mode=data_type)
 
+def load_encoder_feature(model0, model1, data_processor, cached_dataset_root, data_type='train'):
+        load_and_cache_examples(data_processor, cached_dataset_root, data_type)
+        dataset = NERNENDataset(train_samples, mode=data_type)
+        dataloader = DataLoader(dataset, batch_size=len(dataset), shuffle=False)
+        for step, batch in enumerate(train_dataloader):
+            model.eval()
+            batch[0]['input_ids'] = batch[0]['input_ids'].to(args.device)
+            batch[0]['token_type_ids'] = batch[0]['token_type_ids'].to(args.device)
+            batch[0]['attention_mask'] = batch[0]['attention_mask'].to(args.device)
+            batch[1] = batch[1].to(args.device)
+            batch[2] = batch[2].to(args.device)
+            batch[3] = batch[3].to(args.device)
+            batch[4] = batch[4].to(args.device)
+            batch = tuple(t for t in batch)
+            inputs, word_mask, ner, nen, lens = batch
+        return FeatureDataset(samples, mode=data_type)
+
+
 
 def collate_fn(batch):
     """
