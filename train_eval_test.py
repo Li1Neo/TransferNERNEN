@@ -26,20 +26,79 @@ def train(args, train_dataset, model, tokenizer):
 		t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs # 243/1*3 = 729
 
 	# Prepare optimizer and schedule (linear warmup and decay)
-	no_decay = ["bias", "LayerNorm.weight"]
-	optimizer_grouped_parameters = [
-		{
-			"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-			"weight_decay": args.weight_decay
-		},
-		{
-			"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
-			"weight_decay": 0.0
-		}
-	]
+	no_decay = ['bias', 'gamma', 'beta']
+	down_stream = ['classifier', 'fc', 'label_embedding']
+	if args.discr:
+		if len(args.layer_learning_rate) > 1:
+			groups = [(f'layer.{i}.', args.layer_learning_rate[i]) for i in range(12)]
+		else:
+			lr = args.layer_learning_rate[0]
+			groups = [(f'layer.{i}.', lr * pow(args.layer_learning_rate_decay, 11 - i)) for i in range(12)]
+		group_all = [f'layer.{i}.' for i in range(12)]
+
+		no_decay_optimizer_parameters = []
+		decay_optimizer_parameters = []
+		for g, l in groups:
+			decay_optimizer_parameters.append(
+				{
+					'params': [p for n, p in model.named_parameters() if
+							   not any(nd in n for nd in no_decay) and any(nd in n for nd in [g])],
+					'weight_decay_rate': 0.01, 'lr': l
+				}
+			)
+			no_decay_optimizer_parameters.append(
+				{
+					'params': [p for n, p in model.named_parameters() if
+							   any(nd in n for nd in no_decay) and any(nd in n for nd in [g])],
+					'weight_decay_rate': 0.0, 'lr': l
+				}
+			)
+
+		group_all_parameters = [
+			{'params': [p for n, p in model.named_parameters() if
+						not any(nd in n for nd in no_decay) and not any(nd in n for nd in group_all)],
+			 'weight_decay_rate': 0.01, 'lr': 1e-4},
+			{'params': [p for n, p in model.named_parameters() if
+						any(nd in n for nd in no_decay) and not any(nd in n for nd in group_all)],
+			 'weight_decay_rate': 0.0, 'lr': 1e-4},
+		]
+
+		optimizer_parameters = no_decay_optimizer_parameters + decay_optimizer_parameters + group_all_parameters
+
+	else:
+		optimizer_parameters = [
+			{'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+			 'weight_decay_rate': 0.01},
+			{'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+			 'weight_decay_rate': 0.0},
+			{'params': [p for n, p in model.named_parameters() if
+						any(nd in n for nd in no_decay) and any(nd in n for nd in down_stream)],
+			 'weight_decay_rate': 0.0, 'lr': 1e-4}
+		]
+
+	if args.frozen_bert:
+		for p in model.bert.parameters():
+			p.requires_grad = False
+	from optimization import BERTAdam
+	optimizer = BERTAdam(optimizer_parameters,
+						 lr=args.learning_rate,
+						 warmup=args.warmup_proportion,
+						 t_total=t_total)
+	# no_decay = ["bias", "LayerNorm.weight"]
+	# optimizer_grouped_parameters = [
+	# 	{
+	# 		"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+	# 		"weight_decay": args.weight_decay
+	# 	},
+	# 	{
+	# 		"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+	# 		"weight_decay": 0.0
+	# 	}
+	# ]
+	# optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+	# scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
 	args.warmup_steps = int(t_total * args.warmup_proportion) # 729 * 0.1 = 72
-	optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-	scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
+
 	# Check if saved optimizer or scheduler states exist
 	if os.path.isfile(os.path.join(args.model_name_or_path, "optimizer.pt")) and os.path.isfile(
 			os.path.join(args.model_name_or_path, "scheduler.pt")):
@@ -165,9 +224,10 @@ def train(args, train_dataset, model, tokenizer):
 			pbar(step, {'loss': loss.item()})
 			tr_loss += loss.item()
 			if (step + 1) % args.gradient_accumulation_steps == 0:
-				torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+				# TODO
+				# torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 				optimizer.step()
-				scheduler.step()  # Update learning rate schedule
+				# scheduler.step()  # Update learning rate schedule
 				model.zero_grad()
 				global_step += 1
 				if args.logging_steps > 0 and global_step % args.logging_steps == 0: # 每args.logging_steps个steps评估一下
@@ -325,7 +385,7 @@ def evaluate(args, model, tokenizer, prefix="", dataset='test'):
 				warnings.filterwarnings('ignore')
 				prec = precision_score(y_real_flat, pred_real_flat, average='macro', labels=np.unique(pred_real_flat))
 				reca = recall_score(y_real_flat, pred_real_flat, average='macro', labels=np.unique(pred_real_flat))
-				f1 = f1_score(y_real_flat, pred_real_flat, average='weighted')
+				f1 = f1_score(y_real_flat, pred_real_flat, average='weighted', labels=np.unique(pred_real_flat))
 				acc = accuracy_score(y_real_flat, pred_real_flat)
 				return (prec, reca, f1, acc, y_real, pred_real, inputs)
 			P, R, F1, ACC , y_real, pred_real, inputs_id = calc_nen_f1(np.array(out_label_ids), np.array(preds), np.array(inputs_id), input_lens, np.array(input_word_mask))

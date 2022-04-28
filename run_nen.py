@@ -77,6 +77,22 @@ if __name__ == '__main__':
                         help="The initial learning rate for crf and linear layer.")
     parser.add_argument("--weight_decay", default=0.01, type=float,
                         help="Weight decay if we apply some.")
+    parser.add_argument('--layer_learning_rate', # TODO
+                        type=float,
+                        nargs='+',
+                        default=[2e-5] * 12,
+                        help="learning rate in each group")
+    parser.add_argument('--layer_learning_rate_decay',
+                        type=float,
+                        default=0.95)
+    parser.add_argument("--discr",
+                        default=False,
+                        action='store_true',
+                        help="Whether to do discriminative fine-tuning.")
+    parser.add_argument("--frozen_bert",
+                        default=False,
+                        action='store_true',
+                        help="frozen the gradient of bert encoder")
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
