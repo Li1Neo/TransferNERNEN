@@ -9,3 +9,4 @@ __pycache__/
 *.bin
 optimizer.pt
 data/dataset_cache/cdr/test.pt
+data/dataset_cache/cdr/eval.pt

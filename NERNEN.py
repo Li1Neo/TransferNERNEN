@@ -48,7 +48,8 @@ class BertSoftmaxForNer(BertPreTrainedModel):
         # )
         sequence_output = outputs[0]  # torch.Size([24, 58, 768])
         sequence_output = self.dropout(sequence_output)
-        logits = self.classifier(sequence_output) # torch.Size([24, 58, num_labels])
+        logits = self.classifier(sequence_output) # torch.Size([24, 58, num_labels]) # TODO
+
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
         # outputs[2:]：()
         # outputs：一个元素的元组
@@ -99,8 +100,11 @@ class BertSoftmaxForNen(BertPreTrainedModel): # multitask
         self.num_labels2 = config.num_labels2  # 辅助任务ner
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size*2, config.num_labels) # nen主任务
+        self.classifier = nn.Linear(config.hidden_size*2, config.num_labels) # nen主任务 # TODO
+        # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         self.classifier2 = nn.Linear(config.hidden_size, config.num_labels2) # ner
+        # self.fc = nn.Linear(config.hidden_size*2, config.hidden_size) # TODO
+        # self.relu = nn.ReLU(inplace=True)
         self.label_embedding = nn.Embedding(config.num_labels2, config.hidden_size)
         self.init_weights()
 
@@ -111,7 +115,11 @@ class BertSoftmaxForNen(BertPreTrainedModel): # multitask
         ner_embedding = self.label_embedding(ner_labels)*10
         ccat = torch.cat((sequence_output , ner_embedding),-1)
         ccat = self.dropout(ccat)
-        logits = self.classifier(ccat) # nen
+        # logits = self.fc(ccat)
+        # logits = self.relu(logits)
+        # logits = self.dropout(logits)
+        # logits = self.classifier(logits)
+        logits = self.classifier(ccat) # nen # TODO
         logits2 = self.classifier2(sequence_output) # ner
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
         if labels is not None and ner_labels is not None:

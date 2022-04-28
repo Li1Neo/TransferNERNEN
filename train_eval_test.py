@@ -199,7 +199,7 @@ def train(args, train_dataset, model, tokenizer):
 			torch.cuda.empty_cache()
 	return global_step, tr_loss / global_step
 
-def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
+def evaluate(args, model, tokenizer, prefix="", dataset='test'):
 	metric = SeqEntityScore(args.id2label, markup=args.markup) # <metrics.ner_metrics.SeqEntityScore 对象>
 	eval_output_dir = args.output_dir # './outputs/cdr/nen/bert'
 	if not os.path.exists(eval_output_dir):
@@ -236,6 +236,9 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 	pbar = ProgressBar(n_total=len(eval_dataloader), desc="Evaluating")
 
 	ner_f1s, nen_f1s = [], []  # TODO  离谱的指标
+	nen_ps = []
+	nen_rs = []
+	nen_accs = []
 	y_reals = []
 	pred_reals = []
 	inputs_ids = []
@@ -315,23 +318,27 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 				pred_real_flat = flat(pred_real)
 				y_real_flat = np.array(y_real_flat)
 				pred_real_flat = np.array(pred_real_flat)
-				# o_m = y_real!=2
-				# y_real = y_real[o_m]
-				# pred_real = pred_real[o_m]
-
-				prec = precision_score(y_real_flat, pred_real_flat, average='weighted')
-				reca = recall_score(y_real_flat, pred_real_flat, average='weighted')
-				acc = f1_score(y_real_flat, [2]*len(pred_real_flat), average='macro')
-				f1 = accuracy_score(y_real_flat,[2]*len(pred_real_flat))
+				o_m = y_real_flat!=2
+				y_real_flat = y_real_flat[o_m]
+				pred_real_flat = pred_real_flat[o_m]
+				import warnings
+				warnings.filterwarnings('ignore')
+				prec = precision_score(y_real_flat, pred_real_flat, average='macro', labels=np.unique(pred_real_flat))
+				reca = recall_score(y_real_flat, pred_real_flat, average='macro', labels=np.unique(pred_real_flat))
+				f1 = f1_score(y_real_flat, pred_real_flat, average='weighted')
+				acc = accuracy_score(y_real_flat, pred_real_flat)
 				return (prec, reca, f1, acc, y_real, pred_real, inputs)
 			P, R, F1, ACC , y_real, pred_real, inputs_id = calc_nen_f1(np.array(out_label_ids), np.array(preds), np.array(inputs_id), input_lens, np.array(input_word_mask))
 			
+			nen_accs.append(ACC)
+			nen_ps.append(P)
+			nen_rs.append(R)
 			nen_f1s.append(F1)
 			inputs_ids.extend(inputs_id)
 			y_reals.extend([[args.id2label[tag] for tag in item] for item in y_real])
 			pred_reals.extend([[args.id2label[tag] for tag in item] for item in pred_real])
 
-		# for i, label in enumerate(out_label_ids):
+	# for i, label in enumerate(out_label_ids):
 		# 	# 如label：[2, 3, 5, 5, 5, ..., 0, 0, 0]  #长55
 		# 	temp_1 = []
 		# 	temp_2 = []
@@ -364,8 +371,17 @@ def evaluate(args, model, tokenizer, prefix="", dataset='eval'):
 		# 	# [3, 5, 5, 5, 5, 5, 5, 5, 5, 2, 1, 4, 4, 4, 3, 2, 2, 2, 2, 2]
 		# pbar(step)
 
+	nen_acc = np.mean(nen_accs)
+	nen_p = np.mean(nen_ps)
+	nen_r = np.mean(nen_rs)
 	nen_f1 = np.mean(nen_f1s)
-	print(nen_f1)
+	logger.info('acc:'+ str(nen_acc))
+	logger.info('p:'+ str(nen_p))
+	logger.info('r:'+ str(nen_r))
+	logger.info('f1:'+ str(nen_f1))
+	from sklearn.metrics import f1_score
+	print(f1_score([item for i in y_reals for item in i], [item for i in pred_reals for item in i], average='weighted'))
+	print(f1_score([item for i in y_reals for item in i], [item for i in pred_reals for item in i], average='macro',labels=np.unique([item for i in pred_reals for item in i])))
 	f = open(args.dataset+'_nen_result.txt', 'w')
 	for i in range(len(y_reals)):
 		f.write(inputs_ids[i] + '\n')

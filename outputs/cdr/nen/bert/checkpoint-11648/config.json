@@ -1,5 +1,5 @@
 {
-  "_name_or_path": "./save/cdr/ner/checkpoint-5460/bert",
+  "_name_or_path": "./data/model_data/biobert-base-cased-v1.1",
   "architectures": [
     "BertSoftmaxForNen"
   ],
